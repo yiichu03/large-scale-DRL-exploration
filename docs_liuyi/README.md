@@ -27,6 +27,8 @@
 
 - `codex/project_code_walkthrough.md`
   - 从代码实现角度梳理当前 `large-scale-DRL-exploration` 仓库
+- `codex/2d_validation_reproducibility_log.md`
+  - 记录 2D smoke test、预训练 checkpoint 测试、5 图初测和 gif 生成命令
 - `codex/paper_reading_deep_rl_large_scale_robot_exploration.md`
   - 论文《Deep Reinforcement Learning-Based Large-Scale Robot Exploration》的中文细读
 - `codex/ariadne_three_stage_practical_guide.md`

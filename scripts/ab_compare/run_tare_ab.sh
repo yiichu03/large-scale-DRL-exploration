@@ -10,16 +10,50 @@ PID_FILE="${RUN_DIR}/pids.env"
 
 SCENE_LABEL="${SCENE_LABEL:-${SCENE:-${UNITY_WORLD:-environment}}}"
 UNITY_WORLD_NAME="${UNITY_WORLD:-environment}"
-RUN_TAG="$(date +%Y%m%d_%H%M%S)_tare_${SCENE_LABEL}"
+TARE_CONFIG="${TARE_CONFIG:-original_indoor_small}"
+RUN_TAG="$(date +%Y%m%d_%H%M%S)_tare_${TARE_CONFIG}_${SCENE_LABEL}"
 OUTPUT_DIR="${OUTPUT_DIR:-${ROOT_DIR}/ab_runs/${RUN_TAG}}"
 MONITOR_PYTHON="${MONITOR_PYTHON:-/usr/bin/python3}"
 START_RVIZ="${START_RVIZ:-1}"
 AUTO_STOP_ON_FINISH="${AUTO_STOP_ON_FINISH:-1}"
 FINISH_GRACE_SEC="${FINISH_GRACE_SEC:-20}"
 RUN_TIMEOUT_SEC="${RUN_TIMEOUT_SEC:-0}"
-TARE_CONFIG="${TARE_CONFIG:-original_indoor_small}"
+AB_RUNNER_SCRIPT="${TARE_LAUNCHER_SCRIPT:-${SCRIPT_DIR}/run_tare_ab.sh}"
+RUNTIME_LAUNCHER_SCRIPT="ros2 launch vehicle_simulator system_simulation_with_exploration_planner.launch"
+MONITOR_SCRIPT="${ROOT_DIR}/scripts/ab_compare/monitor_experiment.py"
+
+git_commit() {
+  local repo_dir="$1"
+  git -C "${repo_dir}" rev-parse --short HEAD 2>/dev/null || printf 'unknown'
+}
+
+write_metadata() {
+  cat > "${OUTPUT_DIR}/run_metadata.json" <<EOF
+{
+  "method": "TARE",
+  "scene_label": "${SCENE_LABEL}",
+  "unity_world": "${UNITY_WORLD_NAME}",
+  "run_tag": "${RUN_TAG}",
+  "output_dir": "${OUTPUT_DIR}",
+  "ab_runner_script": "${AB_RUNNER_SCRIPT}",
+  "runtime_launcher_script": "${RUNTIME_LAUNCHER_SCRIPT}",
+  "monitor_script": "${MONITOR_SCRIPT}",
+  "planner_config": "${TARE_CONFIG}",
+  "start_rviz": "${START_RVIZ}",
+  "auto_stop_on_finish": "${AUTO_STOP_ON_FINISH}",
+  "finish_grace_sec": "${FINISH_GRACE_SEC}",
+  "run_timeout_sec": "${RUN_TIMEOUT_SEC}",
+  "git_commits": {
+    "large_scale_drl_exploration": "$(git_commit "${ROOT_DIR}")",
+    "autonomy_stack_mecanum_wheel_platform": "$(git_commit "${AUTONOMY_STACK_DIR}")",
+    "ARiADNE_ROS_Planner": "$(git_commit "/home/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner")"
+  }
+}
+EOF
+}
 
 mkdir -p "${RUN_DIR}" "${OUTPUT_DIR}"
+write_metadata
 
 if [[ -f "${PID_FILE}" ]]; then
   echo "Found existing TARE pid file: ${PID_FILE}"
@@ -118,7 +152,7 @@ if [[ "${START_RVIZ}" == "1" ]]; then
 fi
 
 MONITOR_ARGS=(
-  "${MONITOR_PYTHON}" "${ROOT_DIR}/scripts/ab_compare/monitor_experiment.py"
+  "${MONITOR_PYTHON}" "${MONITOR_SCRIPT}"
   --method TARE
   --scene "${SCENE_LABEL}"
   --output-dir "${OUTPUT_DIR}"

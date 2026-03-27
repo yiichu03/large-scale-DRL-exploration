@@ -10,12 +10,20 @@
 
 ## 输出
 
-默认输出到 `ab_runs/<timestamp>_<method>_<scene>/`：
+默认输出到 `ab_runs/<timestamp>_<method>_<config>_<scene>/`：
 
+- `run_metadata.json`
 - `summary.json`
 - `summary.txt`
 - `trajectory.csv`
 - `trajectory.svg`
+
+其中 `run_metadata.json` 用来记录：
+
+- 运行入口脚本
+- 关键配置
+- 场景标签
+- 三个仓库的 git commit
 
 ## 常用环境变量
 

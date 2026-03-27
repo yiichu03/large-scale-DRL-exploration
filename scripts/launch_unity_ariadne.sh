@@ -16,6 +16,28 @@ RESTART_ENDPOINT="${RESTART_ENDPOINT:-1}"
 START_RVIZ="${START_RVIZ:-1}"
 RVIZ_CONFIG="${RVIZ_CONFIG:-vehicle_simulator}"
 CAPTURE_LOGS="${CAPTURE_LOGS:-0}"
+OCTOMAP_RESOLUTION="${OCTOMAP_RESOLUTION:-0.4}"
+OCCUPANCY_MIN_Z="${OCCUPANCY_MIN_Z:-0.0}"
+OCCUPANCY_MAX_Z="${OCCUPANCY_MAX_Z:-1.2}"
+OCTOMAP_SENSOR_MAX_RANGE="${OCTOMAP_SENSOR_MAX_RANGE:-20.0}"
+OCTOMAP_SENSOR_HIT="${OCTOMAP_SENSOR_HIT:-1.0}"
+OCTOMAP_SENSOR_MISS="${OCTOMAP_SENSOR_MISS:-0.45}"
+OCTOMAP_SENSOR_MAX="${OCTOMAP_SENSOR_MAX:-1.0}"
+OCTOMAP_SENSOR_MIN="${OCTOMAP_SENSOR_MIN:-0.2}"
+ARIADNE_PUBLISH_GRAPH="${ARIADNE_PUBLISH_GRAPH:-true}"
+ARIADNE_NODE_RESOLUTION="${ARIADNE_NODE_RESOLUTION:-2.0}"
+ARIADNE_SENSOR_RANGE="${ARIADNE_SENSOR_RANGE:-20.0}"
+ARIADNE_UTILITY_RANGE_FACTOR="${ARIADNE_UTILITY_RANGE_FACTOR:-0.5}"
+ARIADNE_MIN_UTILITY="${ARIADNE_MIN_UTILITY:-3}"
+ARIADNE_FRONTIER_DOWNSAMPLE_FACTOR="${ARIADNE_FRONTIER_DOWNSAMPLE_FACTOR:-1}"
+ARIADNE_MAP_RESOLUTION="${ARIADNE_MAP_RESOLUTION:-0.4}"
+ARIADNE_WAYPOINT_THRESHOLD="${ARIADNE_WAYPOINT_THRESHOLD:-2.0}"
+ARIADNE_NEXT_WAYPOINT_THRESHOLD="${ARIADNE_NEXT_WAYPOINT_THRESHOLD:-4.0}"
+ARIADNE_HARD_UPDATE_THRESHOLD="${ARIADNE_HARD_UPDATE_THRESHOLD:-10.0}"
+ARIADNE_FRONTIER_CLUSTER_RANGE="${ARIADNE_FRONTIER_CLUSTER_RANGE:-10.0}"
+ARIADNE_ENABLE_SAVE_MODE="${ARIADNE_ENABLE_SAVE_MODE:-false}"
+ARIADNE_ENABLE_DSTARLITE="${ARIADNE_ENABLE_DSTARLITE:-false}"
+ARIADNE_REPLANNING_FREQUENCY="${ARIADNE_REPLANNING_FREQUENCY:-2.5}"
 
 mkdir -p "${RUN_DIR}"
 
@@ -193,11 +215,11 @@ fi
 wait_for_topic /state_estimation 60
 wait_for_topic /sensor_scan 60
 
-OCTOMAP_PID="$(start_bg octomap ros2 run octomap_server octomap_server_node --ros-args -r cloud_in:=sensor_scan -p frame_id:=map -p base_frame_id:=sensor_at_scan -p resolution:=0.4 -p occupancy_min_z:=0.0 -p occupancy_max_z:=1.2 -p sensor_model.max_range:=20.0 -p sensor_model.hit:=1.0 -p sensor_model.miss:=0.45 -p sensor_model.max:=1.0 -p sensor_model.min:=0.2)"
+OCTOMAP_PID="$(start_bg octomap ros2 run octomap_server octomap_server_node --ros-args -r cloud_in:=sensor_scan -p frame_id:=map -p base_frame_id:=sensor_at_scan -p resolution:=${OCTOMAP_RESOLUTION} -p occupancy_min_z:=${OCCUPANCY_MIN_Z} -p occupancy_max_z:=${OCCUPANCY_MAX_Z} -p sensor_model.max_range:=${OCTOMAP_SENSOR_MAX_RANGE} -p sensor_model.hit:=${OCTOMAP_SENSOR_HIT} -p sensor_model.miss:=${OCTOMAP_SENSOR_MISS} -p sensor_model.max:=${OCTOMAP_SENSOR_MAX} -p sensor_model.min:=${OCTOMAP_SENSOR_MIN})"
 write_pid_file
 sleep 5
 
-RL_PLANNER_PID="$(start_bg ariadne ros2 run rl_planner rl_planner --ros-args -p publish_graph:=true -p node_resolution:=2.0 -p sensor_range:=20.0 -p utility_range_factor:=0.5 -p min_utility:=3 -p frontier_downsample_factor:=1 -p map_resolution:=0.4 -p waypoint_threshold:=2.0 -p next_waypoint_threshold:=4.0 -p hard_update_threshold:=10.0 -p frontier_cluster_range:=10.0 -p enable_save_mode:=false -p enable_dstarlite:=false -p replanning_frequency:=2.5)"
+RL_PLANNER_PID="$(start_bg ariadne ros2 run rl_planner rl_planner --ros-args -p publish_graph:=${ARIADNE_PUBLISH_GRAPH} -p node_resolution:=${ARIADNE_NODE_RESOLUTION} -p sensor_range:=${ARIADNE_SENSOR_RANGE} -p utility_range_factor:=${ARIADNE_UTILITY_RANGE_FACTOR} -p min_utility:=${ARIADNE_MIN_UTILITY} -p frontier_downsample_factor:=${ARIADNE_FRONTIER_DOWNSAMPLE_FACTOR} -p map_resolution:=${ARIADNE_MAP_RESOLUTION} -p waypoint_threshold:=${ARIADNE_WAYPOINT_THRESHOLD} -p next_waypoint_threshold:=${ARIADNE_NEXT_WAYPOINT_THRESHOLD} -p hard_update_threshold:=${ARIADNE_HARD_UPDATE_THRESHOLD} -p frontier_cluster_range:=${ARIADNE_FRONTIER_CLUSTER_RANGE} -p enable_save_mode:=${ARIADNE_ENABLE_SAVE_MODE} -p enable_dstarlite:=${ARIADNE_ENABLE_DSTARLITE} -p replanning_frequency:=${ARIADNE_REPLANNING_FREQUENCY})"
 write_pid_file
 
 wait_for_topic /projected_map 60

@@ -90,7 +90,18 @@ cleanup() {
   fi
 }
 
-trap cleanup EXIT INT TERM
+handle_signal() {
+  local signal_name="${1:-INT}"
+  local exit_code="${2:-130}"
+  echo
+  echo "Received ${signal_name}, stopping Unity + ARiADNE session..."
+  cleanup
+  exit "${exit_code}"
+}
+
+trap cleanup EXIT
+trap 'handle_signal INT 130' INT
+trap 'handle_signal TERM 143' TERM
 
 write_pid_file() {
   cat > "${PID_FILE}" <<EOF

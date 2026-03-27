@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-RUN_DIR="/tmp/unity_ariadne_run"
+RUN_DIR="/home/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner/tmp/unity_ariadne_run"
 PID_FILE="${RUN_DIR}/pids.env"
 
 if [[ ! -f "${PID_FILE}" ]]; then

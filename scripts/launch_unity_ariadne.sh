@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 AUTONOMY_STACK_DIR="/home/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform"
 ARIADNE_ROS_DIR="/home/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner"
-RUN_DIR="/tmp/unity_ariadne_run"
+RUN_DIR="${ARIADNE_ROS_DIR}/tmp/unity_ariadne_run"
 PID_FILE="${RUN_DIR}/pids.env"
 
 UNITY_WORLD="${UNITY_WORLD:-environment}"

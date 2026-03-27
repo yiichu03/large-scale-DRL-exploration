@@ -19,7 +19,7 @@ read_pid() {
   fi
 }
 
-for pid_var in RL_PLANNER_PID OCTOMAP_PID ENDPOINT_PID ROS_LAUNCH_PID UNITY_PID; do
+for pid_var in RVIZ_PID RL_PLANNER_PID OCTOMAP_PID ENDPOINT_PID ROS_LAUNCH_PID UNITY_PID; do
   pid="$(read_pid "${pid_var}")"
   if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
     echo "Stopping ${pid_var}=${pid}"

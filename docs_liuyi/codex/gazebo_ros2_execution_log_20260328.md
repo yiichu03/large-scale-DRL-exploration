@@ -22,6 +22,8 @@
 
 - 后续官方仓库已迁移到：
   - `/home/liuyi/projects/thermal_nav/autonomous_exploration_development_environment`
+- 当前环境模型源目录已迁移到：
+  - `/home/liuyi/projects/thermal_nav/autonomous_exploration_environments`
 
 ## 1. 官方信息核对
 

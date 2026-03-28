@@ -31,7 +31,7 @@ ARiADNE：
 
 环境模型源目录：
 
-- `/home/liuyi/Downloads/autonomous_exploration_environments`
+- `/home/liuyi/projects/thermal_nav/autonomous_exploration_environments`
 
 ## 2. 当前推荐脚本
 

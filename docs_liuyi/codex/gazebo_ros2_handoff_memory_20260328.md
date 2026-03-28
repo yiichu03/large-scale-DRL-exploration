@@ -352,6 +352,12 @@ README 建议激活 conda，主要是：
 3. /home/liuyi/Downloads/autonomous_exploration_environments
 4. /home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/ros2_setup_notes.pdf
 
+更新：
+
+- 环境模型源目录现已迁移到：
+  - `/home/liuyi/projects/thermal_nav/autonomous_exploration_environments`
+- 官方仓库里的 `mesh/{campus,forest,garage,indoor,tunnel}` 仍然通过软链接指向该目录
+
 请先阅读：
 /home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/docs_liuyi/codex/gazebo_ros2_handoff_memory_20260328.md
 

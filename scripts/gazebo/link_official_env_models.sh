@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 THERMAL_NAV_DIR="$(dirname "${ROOT_DIR}")"
 OFFICIAL_ENV_DIR="${OFFICIAL_ENV_DIR:-${THERMAL_NAV_DIR}/autonomous_exploration_development_environment}"
-MODEL_SRC_DIR="${MODEL_SRC_DIR:-/home/liuyi/Downloads/autonomous_exploration_environments}"
+MODEL_SRC_DIR="${MODEL_SRC_DIR:-${THERMAL_NAV_DIR}/autonomous_exploration_environments}"
 MODEL_DST_DIR="${MODEL_DST_DIR:-${OFFICIAL_ENV_DIR}/src/vehicle_simulator/mesh}"
 
 models=(campus forest garage indoor tunnel)
@@ -32,14 +32,16 @@ for model in "${models[@]}"; do
   fi
 
   if [[ -L "${dst}" ]]; then
-    target="$(readlink -f "${dst}")"
-    expected="$(readlink -f "${src}")"
+    target="$(readlink -m "${dst}")"
+    expected="$(readlink -m "${src}")"
     if [[ "${target}" == "${expected}" ]]; then
       echo "OK: ${dst} -> ${target}"
       continue
     fi
-    echo "Existing symlink points elsewhere: ${dst} -> ${target}" >&2
-    exit 1
+    rm -f "${dst}"
+    ln -s "${src}" "${dst}"
+    echo "Relinked: ${dst} -> ${src}"
+    continue
   fi
 
   if [[ -e "${dst}" ]]; then

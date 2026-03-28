@@ -5,6 +5,7 @@
 You can find our original implementation in the [main branch](https://github.com/marmotlab/large-scale-DRL-exploration/tree/main).
 We reimplement the code to optimize the computing time, RAM/VRAM usage, and compatibility with ROS. 
 The trained model can be directly tested in our [ARiADNE ROS planner](https://github.com/marmotlab/ARiADNE-ROS-Planner).
+The `ros2_setup_notes.pdf` included in this repository comes from the CMU development-environment page: https://www.cmu-exploration.com/development-environment
 
 ## Run
 

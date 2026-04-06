@@ -1609,3 +1609,618 @@ ps -ef | rg 'official_system_no_xacro.launch.py|gzserver .*vehicle_simulator/wor
   - 停止脚本
   - 依赖固化
   - 运行验证
+
+## 19. 对照上游 `ARiADNE-ROS-Planner` `main` 的场景参数
+
+补充背景：
+
+- `humble` 分支只有一个 `rl_planner.launch.py`
+- README 明确写了：
+  - `indoor` 是当前 launch 的默认参数
+  - `forest` / `tunnel` 等其他场景需要参考 ROS1 示例
+
+为确认这些参数，额外检查了上游 `main`：
+
+```bash
+git ls-remote --heads upstream
+git clone --branch main --single-branch https://github.com/marmotlab/ARiADNE-ROS-Planner.git /tmp/ARiADNE-ROS-Planner-main-compare
+sed -n '1,240p' /tmp/ARiADNE-ROS-Planner-main-compare/src/launch/rl_planner.launch
+sed -n '1,240p' /tmp/ARiADNE-ROS-Planner-main-compare/src/launch/rl_planner_forest.launch
+sed -n '1,240p' /tmp/ARiADNE-ROS-Planner-main-compare/src/launch/rl_planner_tunnel.launch
+```
+
+结论：
+
+- 上游 `main` 的场景 preset 只明确给了：
+  - `indoor`
+  - `forest`
+  - `tunnel`
+- `garage` / `campus` 没有单独的 ARiADNE launch
+
+因此本地 wrapper 已更新为：
+
+- `SCENE=indoor`
+  - 自动套用上游 `main` 的 `indoor` 参数
+- `SCENE=forest`
+  - 自动套用上游 `main` 的 `forest` 参数
+- `SCENE=tunnel`
+  - 自动套用上游 `main` 的 `tunnel` 参数
+- `SCENE=garage` / `SCENE=campus`
+  - 默认回落到 `indoor` baseline
+
+涉及文件：
+
+- `/home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/scripts/gazebo/launch_official_ariadne.sh`
+- `/home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/docs_liuyi/codex/official_gazebo_ros2_usage_guide_20260328.md`
+
+补充：
+
+- 最初临时克隆目录放在了系统 `/tmp/ARiADNE-ROS-Planner-main-compare`
+- 按后续约定，已迁移到：
+  - `/home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/tmp/agent_tmp/ARiADNE-ROS-Planner-main-compare`
+
+## 20. 多场景诊断结果
+
+目标：
+
+- 解释 `forest` 不动
+- 解释 `garage` / `tunnel` 看起来往下掉
+- 解释 `campus` 看起来能跑但完成情况不确定
+
+### 20.1 `forest`
+
+实测过程：
+
+- 启动 `forest` headless 会话
+- `/state_estimation` 固定在 `(0.0, 0.0, 0.75)`
+- `/cmd_vel` 为 `0`
+- `/way_point` 长时间没有实际消息
+- 进一步检查发现：
+  - `rl_planner` 进程已经退出
+
+前台重跑 `rl_planner` 后拿到明确报错：
+
+```text
+Exception in RL Planner: Trying to set parameter 'replanning_frequency' to '1' of type 'INTEGER', expecting type 'DOUBLE'
+```
+
+结论：
+
+- 不是 `forest` 场景本身先坏了
+- 是 wrapper 里 `replanning_frequency` 类型传错导致 `rl_planner` 启动即退出
+
+### 20.2 `tunnel`
+
+现象与 `forest` 基本一致：
+
+- `/state_estimation` 固定在 `(0.0, 0.0, 0.75)`
+- `rl_planner` 进程已退出
+
+前台重跑报错：
+
+```text
+Exception in RL Planner: Trying to set parameter 'replanning_frequency' to '2' of type 'INTEGER', expecting type 'DOUBLE'
+```
+
+结论：
+
+- `tunnel` 的 planner 失败根因与 `forest` 相同
+
+### 20.3 `garage`
+
+实测现象：
+
+- `rl_planner` 节点和进程都还活着
+- `/state_estimation` 仍在 `(0.0, 0.0, 0.75)`
+- `/cmd_vel` 为 `0`
+- `/exploration_finish=true`
+
+结论：
+
+- `garage` 不是 planner 崩溃
+- 而是很快判定探索结束
+- 这和之前文档里的经验一致：`garage` 只适合做 Gazebo 主链验证，不适合做 ARiADNE 主联调
+
+### 20.4 `campus`
+
+实测现象：
+
+- `rl_planner` 进程正常存活
+- 没有像 `garage` 一样立刻 `exploration_finish=true`
+- 但当前仍缺官方 ARiADNE `campus` preset
+
+结论：
+
+- `campus` 暂时可视为“实验性可运行”
+- 是否探索充分，需要后续补日志和时间序列分析，不适合现在只靠肉眼判断
+
+### 20.5 处理动作
+
+已完成：
+
+- 将 wrapper 中的：
+  - `forest` `replanning_frequency`
+  - 从 `1` 改为 `1.0`
+- 将 wrapper 中的：
+  - `tunnel` `replanning_frequency`
+  - 从 `2` 改为 `2.0`
+
+涉及文件：
+
+- `/home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/scripts/gazebo/launch_official_ariadne.sh`
+- `/home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/docs_liuyi/codex/official_gazebo_ros2_usage_guide_20260328.md`
+
+### 20.6 修复后复测
+
+`forest`：
+
+- `rl_planner` 进程保持存活
+- `/exploration_finish=false`
+- 已收到实际 `/way_point`
+  - 例如：
+    - `(-16.0, 12.0, 0.0)`
+- 已收到非零 `/cmd_vel`
+
+结论：
+
+- `forest` 已从“启动即失败”修复到“可继续联调”
+
+`tunnel`：
+
+- `rl_planner` 进程保持存活
+- 已不再出现参数类型报错导致的立即退出
+- 但本轮短时观察中，尚未快速拿到 `/way_point`
+
+结论：
+
+- `tunnel` 当前从“参数错误”修复到“可继续深查”
+- 下一层问题更可能是起始位姿、场景坐标对齐或 planner 在该场景下启动更慢
+
+## 21. 2026-03-29 RViz 感知视图与 TARE 上游参考仓库
+
+### 21.1 背景
+
+用户提出两个新需求：
+
+- 希望在当前 Gazebo + ARiADNE 的 RViz 中直接看到仿真雷达点云
+- 希望同时看到 `octomap_server` 处理后的可视化结果
+- 另外希望把上游 `tare_planner` 的 `humble-jazzy` 分支拉到本地同级目录，只作为 reference repo
+
+### 21.2 现场核对的感知链路
+
+核对结果：
+
+- 官方 Gazebo 环境里确实带有 Velodyne 仿真
+- Gazebo 插件输出的点云会进入官方 autonomy 链
+- 当前 ARiADNE 不是直接订阅原始雷达插件话题，而是通过：
+  - `/registered_scan`
+  - `/sensor_scan`
+  - `octomap_server`
+  - `/projected_map`
+  这条链最终拿到可用于规划的 2D 地图
+
+关键代码位置：
+
+- `/home/liuyi/projects/thermal_nav/autonomous_exploration_development_environment/src/velodyne_simulator/README.md`
+- `/home/liuyi/projects/thermal_nav/autonomous_exploration_development_environment/src/velodyne_simulator/velodyne_description/urdf/VLP-16.urdf.xacro`
+- `/home/liuyi/projects/thermal_nav/autonomous_exploration_development_environment/src/sensor_scan_generation/src/sensorScanGeneration.cpp`
+- `/home/liuyi/projects/thermal_nav/autonomous_exploration_development_environment/src/vehicle_simulator/src/vehicleSimulator.cpp`
+- `/home/liuyi/projects/thermal_nav/ARiADNE-ROS-Planner/src/rl_planner/rl_planner/rl_planner.py`
+
+### 21.3 RViz 配置处理
+
+发现：
+
+- 现有 clean RViz 配置里其实已经有：
+  - `/sensor_scan`
+  - `/occupied_cells_vis_array`
+  只是默认关闭
+- 但没有把 `/registered_scan` 单独做成一层
+
+处理动作：
+
+- 在 clean 配置中补充了：
+  - `RegisteredScan`
+  - 默认仍关闭
+- 新增一份专门看感知链路的 RViz 配置：
+  - `/home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/scripts/gazebo/rviz/official_gazebo_ariadne_sensing.rviz`
+
+sensing 配置默认打开：
+
+- `/registered_scan`
+- `/sensor_scan`
+- `/occupied_cells_vis_array`
+- `/projected_map`
+
+同时保留：
+
+- `/path`
+- `/way_point`
+
+设计意图：
+
+- `clean` 继续用于看整体探索行为
+- `sensing` 专门用于看“雷达 -> octomap -> 2D 地图”链路
+
+### 21.4 克隆上游 TARE reference repo
+
+执行命令：
+
+```bash
+git clone --branch humble-jazzy --single-branch https://github.com/caochao39/tare_planner.git /home/liuyi/projects/thermal_nav/tare_planner_reference
+```
+
+结果：
+
+- 克隆成功
+- 当前分支：
+  - `humble-jazzy`
+
+仓库位置：
+
+- `/home/liuyi/projects/thermal_nav/tare_planner_reference`
+
+### 21.5 从上游 reference repo 获取到的新信息
+
+与本地 `autonomy_stack_mecanum_wheel_platform` 中的 ROS2 TARE 相比，上游 `humble-jazzy` 参考仓库额外明确提供了：
+
+- 逐场景 launch：
+  - `explore_garage.launch`
+  - `explore_indoor.launch`
+  - `explore_forest.launch`
+  - `explore_tunnel.launch`
+  - `explore_campus.launch`
+  - `explore_matterport.launch`
+- 逐场景 config：
+  - `garage.yaml`
+  - `indoor.yaml`
+  - `forest.yaml`
+  - `tunnel.yaml`
+  - `campus.yaml`
+  - `matterport.yaml`
+
+这说明：
+
+- 这个上游 ROS2 `humble-jazzy` 仓库确实能为后续 TARE 对接提供更完整的场景参数参考
+- 但当前实验底座仍然可以继续优先使用：
+  - `/home/liuyi/projects/thermal_nav/autonomous_exploration_development_environment`
+  - `/home/liuyi/projects/thermal_nav/autonomy_stack_mecanum_wheel_platform/src/exploration_planner/tare_planner`
+
+## 22. 2026-03-29 Official Gazebo + current-stack TARE（garage）
+
+### 22.1 目标与采用的结构
+
+用户希望优先看：
+
+- 当前导航栈
+- 在官方 Gazebo `garage`
+- 跑 TARE 的实际表现
+
+最终采用的结构不是“整包 source 当前栈覆盖官方环境”，而是：
+
+- 官方 Gazebo 环境提供：
+  - `vehicleSimulator`
+  - `sensor_scan_generation`
+  - `terrain_analysis`
+  - `terrain_analysis_ext`
+  - `garage` world
+- 当前栈提供：
+  - `local_planner.launch`
+  - `tare_planner_node`
+- 上游 `tare_planner_reference`
+  - 只提供 `garage.yaml` 作为参数参考来源
+
+这么做的原因：
+
+- `vehicle_simulator`、`terrain_analysis`、`terrain_analysis_ext`、`local_planner` 在两边都有同名包
+- 如果在起官方系统前就 source 当前栈，官方 Gazebo launch 会被 current stack 的同名包覆盖
+- 所以需要把“官方系统启动”和“current stack 执行侧启动”拆成两步
+
+### 22.2 本次新增/修改的文件
+
+本次主要落下：
+
+- `scripts/gazebo/launch/official_vehicle_simulator_no_xacro.launch.py`
+  - 新增 `cmd_vel_topic` launch 参数
+  - 用于把官方 `vehicleSimulator` 的控制输入改到 `/cmd_vel_stamped`
+- `scripts/gazebo/launch/official_system_perception_no_xacro.launch.py`
+  - 只起官方 Gazebo 感知/仿真侧
+  - 不起官方 `local_planner`
+- `scripts/gazebo/config/tare_garage_current_stack.yaml`
+  - 以上游 `tare_planner_reference` 的 `garage.yaml` 为基线
+- `scripts/gazebo/launch_official_tare_current_stack.sh`
+  - 一键起官方 Gazebo + current stack `local_planner` + current stack `tare_planner`
+- `scripts/gazebo/stop_official_tare_current_stack.sh`
+  - 对应停止脚本
+
+### 22.3 第一次真实阻塞：沙箱权限
+
+第一次在当前 Codex 沙箱里直接运行：
+
+```bash
+export START_SYSTEM=1
+export START_RVIZ=0
+export START_JOY=0
+export SCENE=garage
+export GAZEBO_GUI=false
+/home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/scripts/gazebo/launch_official_tare_current_stack.sh
+```
+
+现象：
+
+- `terrain_analysis`
+- `terrain_analysis_ext`
+- `sensor_scan_generation`
+  都起来了
+- 但 `vehicleSimulator/gzserver` 没起来
+- `ros2 topic list` 只剩：
+  - `/parameter_events`
+  - `/rosout`
+
+查看 launch log：
+
+- `gzserver` 报：
+  - `Error opening log file: "/home/liuyi/.gazebo/server-11345/gzserver.log"`
+  - `getifaddres: Operation not permitted`
+
+结论：
+
+- 不是这条 TARE 接法本身有问题
+- 是当前沙箱不允许 `gzserver` 正常写 `~/.gazebo` 和使用它需要的 socket
+- 所以真实 smoke test 必须改成沙箱外执行
+
+### 22.4 第一次沙箱外运行：主链接通，但发现重复静态 TF
+
+切到沙箱外重新跑后，第一次就已经把主链打通：
+
+- `/state_estimation`
+- `/registered_scan`
+- `/terrain_map`
+- `/terrain_map_ext`
+- `/state_estimation_at_scan`
+  全部 ready
+- current stack `local_planner` 起成功
+- current stack `tare_planner_node` 起成功
+- `/way_point` ready
+
+但同时发现：
+
+- `ros2 node list --no-daemon` 出现 exact-name warning
+- `/sensorTransPublisher`
+- `/vehicleTransPublisher`
+  各有两份
+
+原因：
+
+- `official_system_perception_no_xacro.launch.py`
+- current stack `local_planner.launch`
+  都在发同一组静态 TF
+
+处理：
+
+- 删除了 `official_system_perception_no_xacro.launch.py` 里的那一组 static TF publisher
+- 保留 current stack `local_planner.launch` 自己起的那一组
+
+### 22.5 第二次沙箱外运行：garage smoke test 通过
+
+修复重复 TF 后再次运行，命令不变。
+
+关键结果：
+
+1. 运行链路成立
+
+- `/cmd_vel_stamped`：
+  - publisher：`pathFollower`
+  - subscriber：`vehicleSimulator`
+
+2. TARE 已经在工作
+
+- `/way_point` 采样到：
+  - `x=37.02149949073792`
+  - `y=14.999999999999996`
+  - `z=0.8333154916763306`
+
+3. 尚未提前结束
+
+- `/exploration_finish` 采样值：
+  - `false`
+
+4. 车体确实在移动
+
+第一次 `/state_estimation`：
+
+- `x=11.214799880981445`
+- `y=12.636194229125977`
+- `z=0.8394166231155396`
+
+约 5 秒后第二次 `/state_estimation`：
+
+- `x=13.355224609375`
+- `y=11.661040306091309`
+- `z=0.8393887877464294`
+
+5. 控制命令不是零
+
+- `/cmd_vel_stamped` 采样到：
+  - `linear.x=0.40999990701675415`
+  - `linear.y=0.0`
+  - `angular.z=5.2004552344442345e-06`
+
+### 22.6 当前结论
+
+截至 `2026-03-29` 本轮验证结束时，可以确认：
+
+- 官方 Gazebo `garage`
+- current stack `localPlanner + pathFollower`
+- current stack `tare_planner`
+
+已经能形成一条真实闭环：
+
+- `TARE -> /way_point -> localPlanner -> /path -> pathFollower -> /cmd_vel_stamped -> official vehicleSimulator`
+
+这意味着：
+
+- 现在已经可以开始看“当前导航栈在 Gazebo garage 的表现”
+- 当前 smoke test 证明的是“系统活了，且控制闭环成立”
+- 还不等于已经证明 `garage` 表现最优，后续仍可以继续看：
+  - 是否过早结束
+  - 是否有局部振荡
+  - waypoint 质量是否合理
+  - 是否要补 scene-specific TARE/RViz preset
+
+### 22.7 轨迹/高度可视化增强
+
+用户提出：
+
+- Gazebo 里 `garage` 外层白墙太挡视线
+- 希望更容易看小车在楼里怎么跑
+- 特别希望能直接看轨迹和高度变化
+
+处理动作：
+
+- 新增：
+  - `scripts/gazebo/rviz/official_gazebo_tare_garage.rviz`
+- 并把：
+  - `scripts/gazebo/launch_official_tare_current_stack.sh`
+  的默认 `RVIZ_CONFIG_FILE`
+  改成这份 TARE 专用配置
+
+这份 RViz 配置默认会打开：
+
+- `/state_estimation`
+  - 以 `rviz_default_plugins/Odometry`
+  - `Keep=250`
+  - 作为真实执行轨迹
+- `/global_path`
+- `/local_path`
+- `/path`
+- `/way_point`
+- `/tare_visualizer/exploring_subspaces`
+- `/tare_visualizer/local_planning_horizon`
+
+同时会把环境改成“可透视”风格：
+
+- `/overall_map`
+  - 很低透明度
+- `/explored_areas`
+  - 半透明高亮
+- `/terrain_map`
+  - 亮色点云保留地形高度感
+
+这意味着：
+
+- 后面看 `garage` 内部运动时
+- 应优先看 RViz
+- Gazebo GUI 更适合作为辅助，不适合作为唯一观察手段
+
+### 22.8 运行后 `xyz` 轨迹导出
+
+用户进一步提出：
+
+- 希望运行结束后能直接看轨迹 log
+- 尤其希望看 `x/y/z` 变化，而不只是 RViz 在线观察
+
+现场核对结果：
+
+- 当前栈原本已有 debug CSV 能力
+- 但默认脚本里：
+  - `ENABLE_DEBUG_LOG=0`
+  - 而且 TARE 自己的 debug 参数原先没有接进 wrapper
+
+具体情况：
+
+- `local_planner.csv`
+  - 有 `vehicle_x,vehicle_y`
+  - 没有 `z`
+- `path_follower.csv`
+  - 有 `vehicle_x,vehicle_y`
+  - 没有 `z`
+- `tare_planner.csv`
+  - 其实有 `robot_x,robot_y,robot_z`
+  - 但之前这条 wrapper 没把 `enableDebugLog/debugLogDir/debugLogDecimation` 传给 TARE
+
+因此本轮又补了两件事：
+
+1. 给 wrapper 加了独立轨迹监视器
+
+- 新增：
+  - `scripts/gazebo/monitor_xyz_trajectory.py`
+- 默认由：
+  - `scripts/gazebo/launch_official_tare_current_stack.sh`
+  自动后台启动
+- 订阅：
+  - `/state_estimation`
+  - `/exploration_finish`
+- 自动输出：
+  - `trajectory_xyz.csv`
+  - `trajectory_xyz.svg`
+  - `summary.txt`
+
+其中 `trajectory_xyz.svg` 包含四个视图：
+
+- `XY Top View`
+- `XZ Elevation`
+- `YZ Side View`
+- `Z vs Time`
+
+这样即使没有 `matplotlib`，也能直接打开 SVG 看高度变化。
+
+2. 把 TARE 自己的 debug log 参数也接进 wrapper
+
+现在只要：
+
+```bash
+export ENABLE_DEBUG_LOG=1
+```
+
+就会同时打开：
+
+- `local_planner.csv`
+- `path_follower.csv`
+- `tare_planner.csv`
+
+其中 `tare_planner.csv` 已包含：
+
+- `robot_x`
+- `robot_y`
+- `robot_z`
+- `lookahead_x/y/z`
+- `waypoint_x/y/z`
+
+3. 追加离线 GIF 生成脚本，便于直接回放 xyz 轨迹
+
+- 新增：
+  - `scripts/gazebo/render_trajectory_gif.py`
+- 输入：
+  - `trajectory_xyz.csv`
+- 输出：
+  - `trajectory_xyz.gif`
+- 依赖：
+  - `matplotlib`
+  - `imageio`
+  - `pillow`
+
+这次实际用现有样例做了两轮回归：
+
+- 输入：
+  - `/home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/tmp/official_gazebo_tare_current_stack_run/trajectory_monitor/trajectory_xyz.csv`
+  - 共 `3607` 个采样点
+- 第一轮高分辨率参数输出：
+  - `trajectory_xyz.gif`
+  - 文件大小约 `5.9M`
+- 收紧默认参数后再次输出：
+  - `trajectory_xyz_default.gif`
+  - 文件大小约 `3.9M`
+  - 终端输出：
+    - `Wrote GIF: .../trajectory_xyz_default.gif`
+    - `Frames: 160`
+    - `Samples: 3607`
+
+GIF 画面包含：
+
+- `XY Top View`
+- `XZ Elevation`
+- `Height vs Time`
+- 当前时刻的 `xyz / progress / path length / speed / z range`
+
+这样即使用户提前停止实验，也可以直接把已保存的 `trajectory_xyz.csv` 转成更直观的动态回放。

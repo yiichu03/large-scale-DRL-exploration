@@ -57,6 +57,7 @@ def generate_launch_description():
     record = LaunchConfiguration("record")
     verbose = LaunchConfiguration("verbose")
     world_name = LaunchConfiguration("world_name")
+    cmd_vel_topic = LaunchConfiguration("cmd_vel_topic")
 
     declare_sensor_offset_x = DeclareLaunchArgument("sensorOffsetX", default_value="0.0", description="")
     declare_sensor_offset_y = DeclareLaunchArgument("sensorOffsetY", default_value="0.0", description="")
@@ -85,6 +86,7 @@ def generate_launch_description():
     declare_record = DeclareLaunchArgument("record", default_value="false", description="")
     declare_verbose = DeclareLaunchArgument("verbose", default_value="false", description="")
     declare_world_name = DeclareLaunchArgument("world_name", default_value="garage", description="")
+    declare_cmd_vel_topic = DeclareLaunchArgument("cmd_vel_topic", default_value="/cmd_vel", description="")
 
     start_lidar_state_publisher = Node(
         package="robot_state_publisher",
@@ -151,6 +153,9 @@ def generate_launch_description():
                 "use_sim_time": use_sim_time,
             }
         ],
+        remappings=[
+            ("/cmd_vel", cmd_vel_topic),
+        ],
         output="screen",
     )
 
@@ -182,6 +187,7 @@ def generate_launch_description():
     ld.add_action(declare_record)
     ld.add_action(declare_verbose)
     ld.add_action(declare_world_name)
+    ld.add_action(declare_cmd_vel_topic)
     ld.add_action(OpaqueFunction(function=declare_world_action, args=[world_name]))
 
     ld.add_action(start_gazebo)

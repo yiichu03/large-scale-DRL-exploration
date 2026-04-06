@@ -13,27 +13,148 @@ PID_FILE="${RUN_DIR}/pids.env"
 
 START_SYSTEM="${START_SYSTEM:-0}"
 SCENE="${SCENE:-indoor}"
+SCENE_PRESET="${SCENE_PRESET:-auto}"
 GAZEBO_GUI="${GAZEBO_GUI:-false}"
 START_RVIZ="${START_RVIZ:-0}"
+START_MONITOR="${START_MONITOR:-1}"
+MONITOR_SCRIPT="${ROOT_DIR}/scripts/gazebo/monitor_xyz_trajectory.py"
+_RUN_TAG="$(date +%Y%m%d_%H%M%S)_${SCENE}"
+MONITOR_OUTPUT_DIR="${MONITOR_OUTPUT_DIR:-${RUN_DIR}/trajectory_monitor_${_RUN_TAG}}"
+MONITOR_SAMPLE_PERIOD_SEC="${MONITOR_SAMPLE_PERIOD_SEC:-0.2}"
+MONITOR_SAMPLE_DISTANCE_M="${MONITOR_SAMPLE_DISTANCE_M:-0.05}"
 USE_ARIADNE_CONDA="${USE_ARIADNE_CONDA:-1}"
 ARIADNE_CONDA_ENV="${ARIADNE_CONDA_ENV:-ros2-torch}"
 ARIADNE_CONDA_SH="${ARIADNE_CONDA_SH:-/home/liuyi/miniforge3/etc/profile.d/conda.sh}"
 
-BASE_FRAME="${BASE_FRAME:-sensor}"
-SENSOR_RANGE="${SENSOR_RANGE:-20.0}"
-MAP_RESOLUTION="${MAP_RESOLUTION:-0.4}"
-NODE_RESOLUTION="${NODE_RESOLUTION:-2.0}"
-PUBLISH_GRAPH="${PUBLISH_GRAPH:-false}"
-UTILITY_RANGE_FACTOR="${UTILITY_RANGE_FACTOR:-0.5}"
-MIN_UTILITY="${MIN_UTILITY:-3}"
-FRONTIER_DOWNSAMPLE_FACTOR="${FRONTIER_DOWNSAMPLE_FACTOR:-1}"
-WAYPOINT_THRESHOLD="${WAYPOINT_THRESHOLD:-2.0}"
-NEXT_WAYPOINT_THRESHOLD="${NEXT_WAYPOINT_THRESHOLD:-4.0}"
-HARD_UPDATE_THRESHOLD="${HARD_UPDATE_THRESHOLD:-10.0}"
-FRONTIER_CLUSTER_RANGE="${FRONTIER_CLUSTER_RANGE:-10.0}"
-ENABLE_SAVE_MODE="${ENABLE_SAVE_MODE:-false}"
-ENABLE_DSTARLITE="${ENABLE_DSTARLITE:-false}"
-REPLANNING_FREQUENCY="${REPLANNING_FREQUENCY:-2.5}"
+BASE_FRAME="${BASE_FRAME:-}"
+SENSOR_RANGE="${SENSOR_RANGE:-}"
+MAP_RESOLUTION="${MAP_RESOLUTION:-}"
+NODE_RESOLUTION="${NODE_RESOLUTION:-}"
+PUBLISH_GRAPH="${PUBLISH_GRAPH:-}"
+UTILITY_RANGE_FACTOR="${UTILITY_RANGE_FACTOR:-}"
+MIN_UTILITY="${MIN_UTILITY:-}"
+FRONTIER_DOWNSAMPLE_FACTOR="${FRONTIER_DOWNSAMPLE_FACTOR:-}"
+WAYPOINT_THRESHOLD="${WAYPOINT_THRESHOLD:-}"
+NEXT_WAYPOINT_THRESHOLD="${NEXT_WAYPOINT_THRESHOLD:-}"
+HARD_UPDATE_THRESHOLD="${HARD_UPDATE_THRESHOLD:-}"
+FRONTIER_CLUSTER_RANGE="${FRONTIER_CLUSTER_RANGE:-}"
+ENABLE_SAVE_MODE="${ENABLE_SAVE_MODE:-}"
+ENABLE_DSTARLITE="${ENABLE_DSTARLITE:-}"
+REPLANNING_FREQUENCY="${REPLANNING_FREQUENCY:-}"
+SCENE_PRESET_NOTE=""
+
+set_default_param() {
+  local name="$1"
+  local value="$2"
+  if [[ -z "${!name:-}" ]]; then
+    printf -v "${name}" '%s' "${value}"
+  fi
+}
+
+apply_scene_preset() {
+  local preset="$1"
+  case "${preset}" in
+    indoor)
+      SCENE_PRESET_NOTE="indoor (upstream main/ROS1 baseline)"
+      set_default_param BASE_FRAME "sensor"
+      set_default_param SENSOR_RANGE "20.0"
+      set_default_param MAP_RESOLUTION "0.4"
+      set_default_param NODE_RESOLUTION "2.0"
+      set_default_param UTILITY_RANGE_FACTOR "0.5"
+      set_default_param MIN_UTILITY "3"
+      set_default_param FRONTIER_DOWNSAMPLE_FACTOR "1"
+      set_default_param WAYPOINT_THRESHOLD "2.0"
+      set_default_param NEXT_WAYPOINT_THRESHOLD "4.0"
+      set_default_param HARD_UPDATE_THRESHOLD "10.0"
+      set_default_param FRONTIER_CLUSTER_RANGE "10.0"
+      set_default_param ENABLE_SAVE_MODE "false"
+      set_default_param ENABLE_DSTARLITE "false"
+      set_default_param REPLANNING_FREQUENCY "2.5"
+      ;;
+    forest)
+      SCENE_PRESET_NOTE="forest (upstream main/ROS1 baseline)"
+      set_default_param BASE_FRAME "sensor"
+      set_default_param SENSOR_RANGE "22.0"
+      set_default_param MAP_RESOLUTION "0.4"
+      set_default_param NODE_RESOLUTION "4.0"
+      set_default_param UTILITY_RANGE_FACTOR "0.5"
+      set_default_param MIN_UTILITY "3"
+      set_default_param FRONTIER_DOWNSAMPLE_FACTOR "2"
+      set_default_param WAYPOINT_THRESHOLD "1.0"
+      set_default_param NEXT_WAYPOINT_THRESHOLD "4.0"
+      set_default_param HARD_UPDATE_THRESHOLD "10.0"
+      set_default_param FRONTIER_CLUSTER_RANGE "15.0"
+      set_default_param ENABLE_SAVE_MODE "true"
+      set_default_param ENABLE_DSTARLITE "true"
+      set_default_param REPLANNING_FREQUENCY "1.0"
+      ;;
+    tunnel)
+      SCENE_PRESET_NOTE="tunnel (upstream main/ROS1 baseline)"
+      set_default_param BASE_FRAME "sensor"
+      set_default_param SENSOR_RANGE "20.0"
+      set_default_param MAP_RESOLUTION "0.4"
+      set_default_param NODE_RESOLUTION "1.6"
+      set_default_param UTILITY_RANGE_FACTOR "0.5"
+      set_default_param MIN_UTILITY "3"
+      set_default_param FRONTIER_DOWNSAMPLE_FACTOR "1"
+      set_default_param WAYPOINT_THRESHOLD "1.5"
+      set_default_param NEXT_WAYPOINT_THRESHOLD "6.0"
+      set_default_param HARD_UPDATE_THRESHOLD "10.0"
+      set_default_param FRONTIER_CLUSTER_RANGE "20.0"
+      set_default_param ENABLE_SAVE_MODE "true"
+      set_default_param ENABLE_DSTARLITE "true"
+      set_default_param REPLANNING_FREQUENCY "2.0"
+      ;;
+    none)
+      SCENE_PRESET_NOTE="manual"
+      ;;
+    *)
+      echo "Unsupported scene preset: ${preset}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+case "${SCENE_PRESET}" in
+  auto)
+    case "${SCENE}" in
+      indoor|forest|tunnel)
+        apply_scene_preset "${SCENE}"
+        ;;
+      garage|campus)
+        apply_scene_preset indoor
+        SCENE_PRESET_NOTE="indoor baseline (no upstream ${SCENE} preset)"
+        ;;
+      *)
+        echo "Unsupported scene: ${SCENE}" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  indoor|forest|tunnel|none)
+    apply_scene_preset "${SCENE_PRESET}"
+    ;;
+  *)
+    echo "Unsupported SCENE_PRESET: ${SCENE_PRESET}" >&2
+    exit 1
+    ;;
+esac
+
+set_default_param BASE_FRAME "sensor"
+set_default_param SENSOR_RANGE "20.0"
+set_default_param MAP_RESOLUTION "0.4"
+set_default_param NODE_RESOLUTION "2.0"
+set_default_param PUBLISH_GRAPH "false"
+set_default_param UTILITY_RANGE_FACTOR "0.5"
+set_default_param MIN_UTILITY "3"
+set_default_param FRONTIER_DOWNSAMPLE_FACTOR "1"
+set_default_param WAYPOINT_THRESHOLD "2.0"
+set_default_param NEXT_WAYPOINT_THRESHOLD "4.0"
+set_default_param HARD_UPDATE_THRESHOLD "10.0"
+set_default_param FRONTIER_CLUSTER_RANGE "10.0"
+set_default_param ENABLE_SAVE_MODE "false"
+set_default_param ENABLE_DSTARLITE "false"
+set_default_param REPLANNING_FREQUENCY "2.5"
 
 if [[ ! -f /opt/ros/humble/setup.bash ]]; then
   echo "Missing ROS2 Humble setup: /opt/ros/humble/setup.bash" >&2
@@ -71,11 +192,18 @@ fi
 
 cleanup() {
   set +e
-  for pid in "${RL_PLANNER_PID:-}" "${OCTOMAP_PID:-}" "${SYSTEM_PID:-}" "${RVIZ_PID:-}"; do
+  for pid in "${MONITOR_PID:-}" "${RL_PLANNER_PID:-}" "${OCTOMAP_PID:-}" "${SYSTEM_PID:-}" "${RVIZ_PID:-}"; do
     if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
       kill -- "-${pid}" 2>/dev/null || kill "${pid}" 2>/dev/null || true
     fi
   done
+  # give monitor a moment to finalize outputs
+  if [[ -n "${MONITOR_PID:-}" ]]; then
+    for _ in 1 2 3 4 5; do
+      kill -0 "${MONITOR_PID}" 2>/dev/null || break
+      sleep 0.5
+    done
+  fi
   rm -f "${PID_FILE}"
 }
 
@@ -166,6 +294,7 @@ write_pid_file() {
 SYSTEM_PID=${SYSTEM_PID:-}
 OCTOMAP_PID=${OCTOMAP_PID:-}
 RL_PLANNER_PID=${RL_PLANNER_PID:-}
+MONITOR_PID=${MONITOR_PID:-}
 RVIZ_PID=${RVIZ_PID:-}
 EOF
 }
@@ -258,6 +387,19 @@ echo "rl_planner started: pid=${RL_PLANNER_PID}"
 
 wait_for_topic /way_point 120
 
+if [[ "${START_MONITOR}" == "1" ]]; then
+  mkdir -p "${MONITOR_OUTPUT_DIR}"
+  MONITOR_PID="$(start_bg python3 "${MONITOR_SCRIPT}" \
+    --method "ARIADNE" \
+    --scene "${SCENE}" \
+    --output-dir "${MONITOR_OUTPUT_DIR}" \
+    --sample-period-sec "${MONITOR_SAMPLE_PERIOD_SEC}" \
+    --sample-distance-m "${MONITOR_SAMPLE_DISTANCE_M}")"
+  write_pid_file
+  echo "Trajectory monitor started: pid=${MONITOR_PID}"
+  echo "Trajectory output: ${MONITOR_OUTPUT_DIR}"
+fi
+
 if [[ "${START_RVIZ}" == "1" ]]; then
   RVIZ_PID="$(start_rviz_bg)"
   write_pid_file
@@ -268,8 +410,13 @@ fi
 echo
 echo "Official Gazebo + ARiADNE is up."
 echo "Scene: ${SCENE}"
+echo "Scene preset: ${SCENE_PRESET_NOTE}"
 echo "Base frame: ${BASE_FRAME}"
 echo "Gazebo GUI: ${GAZEBO_GUI}"
+echo "Trajectory monitor: ${START_MONITOR}"
+if [[ "${START_MONITOR}" == "1" ]]; then
+  echo "Trajectory output: ${MONITOR_OUTPUT_DIR}"
+fi
 echo "Stop with Ctrl-C, or run: ${ROOT_DIR}/scripts/gazebo/stop_official_ariadne.sh"
 echo
 

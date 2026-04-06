@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .codex
+tmp/agent_tmp/
+tmp/official_gazebo_*_run/
+runtime_logs/

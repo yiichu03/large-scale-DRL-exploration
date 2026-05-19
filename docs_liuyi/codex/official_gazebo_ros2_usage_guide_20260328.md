@@ -1112,3 +1112,475 @@ export ENABLE_DEBUG_LOG=1
 - `/home/liuyi/projects/thermal_nav/large-scale-DRL-exploration/scripts/gazebo/rviz/official_gazebo_ariadne_clean.rviz`
 
 如果后续你要专门看 TARE marker、`global_path`、`exploring_subspaces`，再单独补一份 TARE 专用 RViz 配置更合适。
+
+## 16. QR_SimEval 场景复用评估（2026-04-08）
+
+当前目标不是复用 `QR_SimEval_Code` 的整套 ROS1 仿真系统，而是判断其中的 Gazebo `.world` / model 资产能否塞进当前 ROS2 官方 Gazebo exploration 流程里，让 ARiADNE 或当前栈的探索模块在这些场景上跑。
+
+### 16.1 结论先说
+
+- `ROS1 -> ROS2` 对“只复用 Gazebo world 资产”不是主障碍。
+- 当前 ROS2 流程本来就是“先载 world，再单独 spawn lidar / robot / camera”，因此 world 只要是标准 Gazebo SDF，原则上可以接。
+- 真正的障碍是：
+  - world 是否自包含
+  - 是否依赖作者机器上的绝对路径 mesh
+  - 是否需要补当前系统依赖的 Gazebo ROS world plugin
+  - 新场景原点附近是否适合直接 spawn 我们的小车
+
+### 16.2 为什么 `test3` 最适合先试
+
+先试 `test3 = maze.world`，不要一开始碰 `test1 / test2 / test14` 这类场景。
+
+原因：
+
+- `QR_SimEval_Code` 的 README 明确写了：
+  - `test3` 对应 `maze`
+  - `test4` 对应 `neighborhood`
+  - 但 `test1 / 2 / 5 / 6 / 7 / 8 / 9 / 12 / 14` 是先起 `earth`，再 “modified in Gazebo”
+  - `test15` 是先起 `terrain_1` 再 modified
+- 这意味着很多 test 在 repo 里没有保存为最终可复现的固定 `.world`。
+- `maze.world` 本身是纯 SDF 墙体、地面和 physics 设置，资源闭合度最高，不依赖作者本地绝对路径。
+- `office_env_large.world` / `office_earthquake.world` 大量引用 `/home/biosurvey/...` 的外部 mesh，不适合当第一批导入对象。
+- `terrain_1.world` 依赖 `model://terrain_1`，但当前 repo 内没有找到对应 model。
+
+### 16.3 对当前 ROS2 系统的实际影响点
+
+当前 `launch_official_ariadne.sh` 最终会把 `world_name:=...` 传给 `official_vehicle_simulator_no_xacro.launch.py`，再由后者：
+
+- 载入 `vehicle_simulator/world/<name>.world`
+- 单独 spawn lidar
+- 单独 spawn robot
+- 单独 spawn camera
+- 启动 `vehicleSimulator`
+
+这说明：
+
+- world 里不需要自带机器人，也不需要沿用 QR 项目的 Unitree 机器人接口。
+- 但是当前系统依赖 Gazebo world 提供 `/set_entity_state` 这类接口。
+- 现有官方 world 都显式加了：
+  - `librotors_gazebo_ros_interface_plugin.so`
+  - `libgazebo_ros_state.so`
+- 而 `vehicleSimulator` 会持续向 `/set_entity_state` 写 `robot / lidar / camera` 的 pose。
+
+所以最稳妥的做法不是“原封不动加载 QR 的 `maze.world`”，而是：
+
+- 保留当前官方 world 里那两行 plugin 头
+- 把 `maze.world` 的几何场景并入一个新的 ROS2 world 模板里
+
+### 16.4 基于 `launch_official_ariadne.sh` 的最小接入计划
+
+后续如果开始改脚本，建议按下面顺序做：
+
+1. 新建一个 ROS2 world，例如 `qr_test3_maze.world`
+   - 放到 `autonomous_exploration_development_environment/src/vehicle_simulator/world/`
+   - 内容以当前官方 world 模板为外壳，保留插件头
+   - 中间替换成 `QR_SimEval` 的 `maze.world` 几何体
+
+2. 新建一个 wrapper 脚本
+   - 基于 `large-scale-DRL-exploration/scripts/gazebo/launch_official_ariadne.sh`
+   - 默认 `SCENE=qr_test3_maze`
+   - 默认 `SCENE_PRESET=none`
+   - 避免被现有 `indoor / forest / tunnel / garage / campus` 白名单拦住
+
+3. 第一轮只验证“环境能否正常加载 + 小车能否移动”
+   - 先不追求 exploration 完整结果
+   - 先看 Gazebo 里 robot / lidar / camera 是否被正确 teleport
+   - 先看 `/state_estimation`、`/velodyne_points`、`/projected_map` 是否正常
+
+4. 第二轮再验证 exploration
+   - 先沿用 `indoor` 或 `tunnel` 一组保守参数做 smoke test
+   - 再决定是否需要单独整理 `qr_test3_maze` 的 scene preset
+
+### 16.5 预期风险
+
+- `maze.world` 当前是正常重力 `-9.8`，而官方 world 多数是 `gravity = 0`。
+- `vehicleSimulator` 是 200 Hz 直接写 entity state，因此重力未必会直接导致失败，但如果 robot / lidar / camera 有下坠或抖动，应优先把新 world 的 gravity 改成和官方 world 一致。
+- 新场景原点不一定是安全出生点，第一轮很可能需要手调 `vehicleX / vehicleY / vehicleYaw`。
+- ARiADNE 当前的 wrapper 对未知 scene 名默认会报 `Unsupported scene`，因此必须显式走 `SCENE_PRESET=none` 或后续补白名单。
+
+### 16.6 当前决定
+
+当前阶段先不改代码。
+
+下一步如果进入实现，优先级如下：
+
+1. 只接 `test3 / maze.world`
+2. 先派生一版 `launch_official_ariadne.sh`
+3. 先验证能否在 `test3` 上正常载入和跑车
+4. 成功后再考虑 `test4 / neighborhood`
+
+不建议当前直接投入 `test1 / test2 / test10 / test11 / test13 / test15`，因为这些场景要么不是固定最终资产，要么缺模型，要么依赖作者本地资源。
+
+### 16.7 `test1` 到 `test15` 复用矩阵
+
+这一版表格明确区分两件事：
+
+- “原版直用”：
+  - 指 repo 里是否已经有足够完整的固定 world / model 资产，可直接接入当前 ROS2 Gazebo 流程
+- “近似重建”：
+  - 指如果不追求作者原版 1:1 场景，只追求功能上等价的 benchmark，自己重搭一个同类场景的难度
+
+| Test | 场景入口 | 原版直用 | 近似重建成本/难度 | repo 内资产情况 | 当前建议 |
+|------|----------|----------|----------|----------------|----------|
+| `test1` | `earth` 后手工修改 | 否 | 中高 | `ISCAS Museum` 名称在 README 中有，但 repo 内未找到同名固定 world 或 model | 不建议优先做；若真需要，按“室内实验室+楼梯”重搭近似版 |
+| `test2` | `earth` 后手工修改 | 否 | 中 | `oak_tree`、`pine_tree`、`vrc_driving_terrain` 在 `gazebo_models` 中存在，但最终布局未保存 | 如果要扩展 benchmark，是较好的近似重建候选 |
+| `test3` | `maze.world` | 是 | 低 | 固定 `.world` 存在，几何自包含 | 已接通；继续看 exploration 效果 |
+| `test4` | `neighborhood.world` | 是 | 低 | 固定 `.world` 存在，且大部分 house / vehicle / facility 模型在 `gazebo_models` 中存在 | 已接通；继续调出生点和 planner 参数 |
+| `test5` | `earth` 后手工修改 | 否 | 中高 | `FRC Field 2016` 名称在 README 中有，但 repo 内未找到同名固定资产 | 当前不建议优先投入 |
+| `test6` | `earth` 后手工修改 | 否 | 中 | `gas_station`、`bus`、`suv`、`hatchback` 在 `gazebo_models` 中存在，但最终布局未保存 | 如果要做车辆障碍类 outdoor benchmark，可优先做近似版 |
+| `test7` | `earth` 后手工修改 | 否 | 高 | `Kitchen Dining` 名称在 README 中有，但 repo 内未找到同名固定资产 | 当前不建议优先投入 |
+| `test8` | `earth` 后手工修改 | 否 | 中 | `powerplant` 在 `gazebo_models` 中存在，但最终布局未保存 | 可做近似版，但优先级低于 `test2 / test6` |
+| `test9` | `earth` 后手工修改 | 否 | 中 | `collapsed_fire_station`、`collapsed_house`、`collapsed_industrial`、`collapsed_police_station` 在 `gazebo_models` 中存在，但最终布局未保存 | 若需要灾后废墟类 benchmark，可做近似版 |
+| `test10` | `office_env_large.world` | 部分，但当前不可直用 | 高 | 固定 `.world` 在 repo 中，但大量 mesh / material URI 指向作者机器绝对路径 | 只有拿到完整资产或先做路径清洗后才值得继续 |
+| `test11` | `office_earthquake.world` | 部分，但当前不可直用 | 高 | 固定 `.world` 在 repo 中，但同样依赖作者机器绝对路径资源 | 同 `test10`，当前不建议优先做 |
+| `test12` | `earth` 后手工修改 | 否 | 中 | `gazebo`、`oak_tree`、`vrc_driving_terrain` 在 `gazebo_models` 中存在，但最终布局未保存 | 如果需要 pavilion/tree outdoor 场景，可做近似版 |
+| `test13` | `terrain_1.world` | 否 | 高 | world 文件存在，但它只 include `model://terrain_1`，仓库里没有对应 model 目录 | 当前被缺失模型直接阻塞 |
+| `test14` | `earth` 后手工修改 | 否 | 原版复刻高；功能等价低 | `long_zoulang3` 名称只出现在 README，repo 内未找到同名固定资产 | 如果要作者原版，不好接；如果只要长走廊 benchmark，自己搭一个更直接 |
+| `test15` | `terrain_1` 后手工修改 | 否 | 高 | 既依赖缺失的 `terrain_1`，README 里的 `test2` 资产名也未在 repo 内找到固定模型 | 当前不建议投入 |
+
+表格之外，还要单独强调几条：
+
+- `test1 / test2 / test5 / test6 / test7 / test8 / test9 / test12 / test14` 的共性不是“完全做不了”，而是：
+  - repo 没保存作者最终摆好的版本
+  - 只能按 README 的模型描述做近似重建
+- `test10 / test11` 的问题不是场景概念不清，而是：
+  - fixed world 在
+  - 但关键资源绑在作者机器绝对路径上
+- `test13 / test15` 的问题更硬：
+  - 关键 terrain model 本身就缺
+
+当前如果按投入产出比排序：
+
+1. `test3`
+2. `test4`
+3. 若必须继续扩展，再考虑 `test2 / test6 / test9 / test12`
+4. `test14` 如果目标只是做 corridor benchmark，也可以很快做一个功能等价版，但不要把它表述成“作者原版 test14 已复用”
+
+## 17. QR_SimEval `test3` 接入版计划（待审核）
+
+这一节只定义“第一版接入要做什么、不做什么、如何判定继续/停止”，供实现前审核。
+
+### 17.1 目标
+
+目标不是复刻 `QR_SimEval` 的整套 ROS1 仿真系统。
+
+当前要做的是：
+
+- 在当前 ROS2 官方 Gazebo 流程里新增一个可加载的 `test3` 版本场景
+- 让当前小车、激光和相机能在该场景中正常启动
+- 验证 ARiADNE 是否能在该场景中开始 exploration
+
+### 17.2 第一版范围
+
+第一版只覆盖：
+
+- `QR_SimEval_Code` 的 `test3 = maze.world`
+- ARiADNE wrapper 流程
+- 最小 smoke test
+
+第一版明确不做：
+
+- `test1 / test2 / test10 / test11 / test13 / test15`
+- 场景美化或 1:1 论文复刻
+- 专门重调一套 maze 参数
+- TARE 同步接入
+
+### 17.3 计划分阶段
+
+#### 阶段 0：准备与冻结条件
+
+目标：
+
+- 确认实现前的工作树状态
+- 记录当前基线脚本和 world 位置
+
+执行内容：
+
+- 保持 `autonomous_exploration_development_environment`、`ARiADNE-ROS-Planner`、`autonomy_stack_mecanum_wheel_platform` 不动
+- 实现优先落在：
+  - `autonomous_exploration_development_environment/src/vehicle_simulator/world/`
+  - `large-scale-DRL-exploration/scripts/gazebo/`
+
+停止条件：
+
+- 如果发现当前官方 Gazebo 基线本身已经不稳定，先不接新场景，先恢复基线
+
+#### 阶段 1：制作 ROS2 版 `qr_test3_maze.world`
+
+目标：
+
+- 让 ROS2 官方 Gazebo 能正常加载一个新的 `test3` 场景 world
+
+执行内容：
+
+- 基于当前官方 world 模板做一个新 world，例如：
+  - `qr_test3_maze.world`
+- 保留当前 world 依赖的 plugin：
+  - `librotors_gazebo_ros_interface_plugin.so`
+  - `libgazebo_ros_state.so`
+- 将 `QR_SimEval` 的 `maze.world` 几何内容并入该 world
+- 第一版优先让 gravity 与当前官方 world 保持一致
+
+验收标准：
+
+- Gazebo 能成功打开新 world
+- `/set_entity_state` 服务可用
+- `robot / lidar / camera` 能被当前 `vehicleSimulator` 正常驱动
+
+停止条件：
+
+- 如果世界文件接入后连 Gazebo 启动都不稳定，暂停，不继续 wrapper
+
+#### 阶段 2：派生 `launch_official_ariadne.sh` 的 test3 wrapper
+
+目标：
+
+- 给 `test3` 提供一条独立、可重复的启动命令
+
+执行内容：
+
+- 基于现有 `launch_official_ariadne.sh` 派生一个 test3 wrapper
+- 默认：
+  - `SCENE=qr_test3_maze`
+  - `SCENE_PRESET=none`
+- 保持当前 ARiADNE 主流程不被破坏
+
+验收标准：
+
+- 可以用单条命令启动 test3 版 Gazebo + ARiADNE
+- 不影响现有 `indoor / tunnel / garage / campus / forest` 场景
+
+停止条件：
+
+- 如果 wrapper 需要大范围侵入现有启动逻辑，暂停，改为更小改动方案
+
+#### 阶段 3：基础 smoke test
+
+目标：
+
+- 先判断“能不能跑”，不是先判断“跑得好不好”
+
+执行内容：
+
+- 启动 test3 wrapper
+- 检查：
+  - `/state_estimation`
+  - `/velodyne_points`
+  - `/projected_map`
+  - `/set_entity_state`
+- 观察 Gazebo 中小车是否正常移动
+- 观察 RViz 中地图是否开始增长
+
+验收标准：
+
+- 小车能在场景内连续运动
+- 点云与投影地图在更新
+- ARiADNE 没有在启动阶段直接卡死
+
+停止条件：
+
+- 如果机器人明显抖动、下坠、卡地面，先只处理 world 级问题，不进入 exploration 调参
+
+#### 阶段 4：最小 exploration 验证
+
+目标：
+
+- 判断 ARiADNE 是否能在 `test3` 上“开始探索”
+
+执行内容：
+
+- 先沿用一套保守参数
+  - 优先考虑 `indoor` 或 `tunnel` 近似配置
+- 观察：
+  - 是否持续出 waypoint
+  - 是否存在明显原地打转
+  - 是否有稳定前进和地图扩展
+
+验收标准：
+
+- ARiADNE 可以在 `test3` 上持续运行一段时间
+- exploration 行为基本成立
+
+停止条件：
+
+- 如果场景已经能加载，但 exploration 完全不起作用，再决定是否值得做第二轮参数整理
+
+### 17.4 第一版成功判据
+
+第一版只需要满足下面三条中的前两条，第三条为加分项：
+
+- 新 world 可加载
+- 小车与传感器可正常运行
+- ARiADNE 能在该场景上完成一次可观察的 exploration 过程
+
+### 17.5 第一版失败判据
+
+出现以下任一情况，就认为第一版暂不值得继续深挖：
+
+- 为了接 `test3` 需要大改当前官方 Gazebo 主流程
+- 新 world 反复破坏 `/set_entity_state` 驱动链
+- 即使处理了 world 层兼容问题，ARiADNE 仍完全无法在该场景上起步
+
+### 17.6 预计涉及文件
+
+如果进入实现，预计优先改这些文件：
+
+- `autonomous_exploration_development_environment/src/vehicle_simulator/world/`
+- `large-scale-DRL-exploration/scripts/gazebo/launch_official_ariadne.sh` 的派生 wrapper
+- 必要时补一份新的 RViz 配置或运行说明
+
+### 17.7 当前建议
+
+按这个计划继续是值得的，因为：
+
+- `test3` 是目前最干净、最闭合的候选场景
+- 关键兼容问题都在 world / wrapper 层，不在算法核心
+- 一轮 smoke test 的成本可控
+
+如果审核通过，下一步就进入“阶段 1 + 阶段 2”的实现，不再扩展分析范围。
+
+### 17.8 当前实现结果（2026-04-08）
+
+已完成：
+
+- 新增 ROS2 world：
+  - `autonomous_exploration_development_environment/src/vehicle_simulator/world/qr_test3_maze.world`
+- 新增 ARiADNE wrapper：
+  - `large-scale-DRL-exploration/scripts/gazebo/launch_official_ariadne_qr_test3.sh`
+- 新增运行入口说明：
+  - `thermal_nav/scripts.md`
+
+实现细节：
+
+- `qr_test3_maze.world` 基于 `QR_SimEval` 的 `maze.world`
+- 保留了官方 ROS2 world 依赖的：
+  - `librotors_gazebo_ros_interface_plugin.so`
+  - `libgazebo_ros_state.so`
+- 第一版将 gravity 对齐为官方 world 的 `0 0 0`
+- 通过给 `quad_maze` 增加整体 `pose`，把一个高净空单元平移到 `(0, 0)`，避免默认出生点落在墙体内部
+
+静态检查结果：
+
+- wrapper 通过 `bash -n`
+- 新 world XML 解析通过
+- 平移后的世界原点净空约为 `3.92 m`
+
+构建结果：
+
+- `vehicle_simulator` 已定点重编译成功
+- 构建过程中先遇到两个与本次改动无关的环境问题：
+  - `colcon` 误用了 miniforge 的 Python
+  - `install/vehicle_simulator` 里旧 symlink 残留
+- 处理方式：
+  - 切回系统 Python + ROS2 环境
+  - 清理该包自己的 `build/vehicle_simulator` 与 `install/vehicle_simulator`
+  - 重新执行定点构建
+
+headless smoke test 结果：
+
+- 命令：
+  - `timeout --signal=INT 90s .../launch_official_ariadne_qr_test3.sh`
+- 官方 Gazebo + ARiADNE 主链已成功启动
+- 已确认就绪的关键 topic：
+  - `/state_estimation`
+  - `/sensor_scan`
+  - `/projected_map`
+  - `/way_point`
+- 运行期间已采到：
+  - 非零速度的 `/state_estimation`
+  - 有效 `/way_point`
+- trajectory monitor 已生成输出：
+  - `trajectory_xyz.csv`
+  - `trajectory_xyz.svg`
+  - `map_meta.json`
+  - `summary.txt`
+
+当前判断：
+
+- `test3 / maze.world` 已经不是“只会启动，不会跑”的状态
+- 至少在第一轮 headless smoke test 里，ARiADNE 已能在该场景上起步并发 waypoint
+- 下一步不需要再证明“能不能接入”，而是要看“这个场景上 exploration 效果怎么样，是否值得继续调参数”
+
+### 17.9 `test4 / neighborhood` 当前实现结果（2026-04-08）
+
+已完成：
+
+- 新增 ROS2 world：
+  - `autonomous_exploration_development_environment/src/vehicle_simulator/world/qr_test4_neighborhood.world`
+- 新增 ARiADNE wrapper：
+  - `large-scale-DRL-exploration/scripts/gazebo/launch_official_ariadne_qr_test4.sh`
+
+实现细节：
+
+- `qr_test4_neighborhood.world` 基于 `QR_SimEval` 的 `neighborhood.world`
+- 保留了官方 ROS2 world 依赖的：
+  - `librotors_gazebo_ros_interface_plugin.so`
+  - `libgazebo_ros_state.so`
+- 第一版显式把 gravity 对齐为官方 world 的 `0 0 0`
+- wrapper 额外导出：
+  - `GAZEBO_MODEL_PATH=${THERMAL_NAV_DIR}/QR_SimEval_Code/gazebo_models`
+
+静态与构建结果：
+
+- wrapper 通过 `bash -n`
+- 新 world XML 解析通过
+- `vehicle_simulator` 已重新定点构建成功
+- 新 world 已安装到：
+  - `install/vehicle_simulator/share/vehicle_simulator/world/qr_test4_neighborhood.world`
+
+headless smoke test 结果：
+
+- 官方 Gazebo + ARiADNE 主链成功启动
+- 已确认就绪的关键 topic：
+  - `/state_estimation`
+  - `/sensor_scan`
+  - `/projected_map`
+  - `/way_point`
+- trajectory monitor 已生成输出目录与结果文件
+
+但当前观察到的行为是：
+
+- `/state_estimation` 在观察窗口内保持在 `(0, 0, 0.75)`
+- `trajectory_xyz.csv` 总位移为 `0 m`
+- `summary.txt` 记录：
+  - `finished: True`
+  - `finish_elapsed_sec: 7.99`
+  - `travel_distance_m: 0.000`
+
+当前判断：
+
+- `test4` 已经达到了“场景能加载、模型库能解析、ARiADNE 主链能起”的程度
+- 但还没有达到“可以像 test3 一样实际跑起来”的程度
+- 下一步优先怀疑：
+  - 默认出生点 `(0, 0)` 不适合当前 neighborhood 场景
+  - 或者该场景需要一组不同于当前默认值的 scene-specific 参数
+
+进一步定位结果（2026-04-08）：
+
+- 已直接确认 `/exploration_finish` 话题存在，且在 `test4` 启动后很快发布 `true`
+- 同时 `/state_estimation` 仍停在：
+  - `x=0.0`
+  - `y=0.0`
+  - `z=0.75`
+  - 线速度与角速度均为 `0`
+- 这说明 `test4` 当前不是“车开始探索后很快结束”，而是“几乎未移动就被判定探索完成”
+
+代码层面的直接依据：
+
+- `rl_planner` 会持续发布 `exploration_finish`，发布器在：
+  - `ARiADNE-ROS-Planner/src/rl_planner/rl_planner/rl_planner.py`
+- 其终止条件写为：
+  - `if sum(self.robot.key_utility) == 0: self.done = True`
+- trajectory monitor 订阅 `/exploration_finish`，收到 `true` 后会把本次运行标记为：
+  - `finished = True`
+  - `stop_reason = finished`
+
+因此当前更精确的判断是：
+
+- `test4` 接入已经成功
+- 现阶段卡点不在 Gazebo world 兼容或 ROS1/ROS2 迁移
+- 而在于 `neighborhood` 场景下，ARiADNE 初始化后很快得到 `key_utility = 0`
+- 优先排查方向应收敛为：
+  - 默认出生点 `(0, 0)` 是否让初始可见区域过大或过于异常
+  - 初始 `/projected_map` 或 frontier 提取是否为空
+  - 是否需要 `neighborhood` 的专用 planner 参数，而不是沿用当前默认值
